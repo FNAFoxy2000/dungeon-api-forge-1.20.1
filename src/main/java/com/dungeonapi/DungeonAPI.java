@@ -6,6 +6,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppingEvent;
@@ -24,297 +25,313 @@ import java.util.Properties;
 @Mod(DungeonAPI.MOD_ID)
 public class DungeonAPI {
 
-    public static final String MOD_ID = "dungeonapi";
+        public static final String MOD_ID = "dungeonapi";
 
-    public static String API_KEY;
-    public static int PORT;
+        public static String API_KEY;
+        public static int PORT;
 
-    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+        public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-    private static MinecraftServer server;
-    private static HttpServer httpServer;
-    private static SchematicManager schematicManager;
-    private static DungeonManager dungeonManager;
+        private static MinecraftServer server;
+        private static HttpServer httpServer;
+        private static SchematicManager schematicManager;
+        private static DungeonManager dungeonManager;
 
-    // =========================================================
-    // CONFIGURACIÓN
-    // =========================================================
+        public DungeonAPI() {
 
-    private static void loadConfiguration() {
+                LOGGER.info("========================================");
+                LOGGER.info("Dungeon API: CONSTRUCTOR EJECUTADO");
+                LOGGER.info("========================================");
 
-        if (server == null) {
-            throw new IllegalStateException(
-                    "El servidor de Minecraft todavía no está disponible.");
+                MinecraftForge.EVENT_BUS.register(this);
         }
 
-        File configFile = server.getServerDirectory()
-                .toPath()
-                .resolve("config")
-                .resolve("dungeonapi.properties")
-                .toFile();
+        // =========================================================
+        // CONFIGURACIÓN
+        // =========================================================
 
-        Properties properties = new Properties();
+        private static void loadConfiguration() {
 
-        try {
-
-            if (!configFile.exists()) {
-
-                configFile.getParentFile().mkdirs();
-
-                properties.setProperty(
-                        "port",
-                        "8080");
-
-                properties.setProperty(
-                        "api-key",
-                        "dungeon-test-123456");
-
-                try (FileOutputStream output = new FileOutputStream(configFile)) {
-
-                    properties.store(
-                            output,
-                            "Dungeon API Configuration");
+                if (server == null) {
+                        throw new IllegalStateException(
+                                        "El servidor de Minecraft todavía no está disponible.");
                 }
 
+                File configFile = server.getServerDirectory()
+                                .toPath()
+                                .resolve("config")
+                                .resolve("dungeonapi.properties")
+                                .toFile();
+
+                Properties properties = new Properties();
+
+                try {
+
+                        if (!configFile.exists()) {
+
+                                configFile.getParentFile().mkdirs();
+
+                                properties.setProperty(
+                                                "port",
+                                                "8080");
+
+                                properties.setProperty(
+                                                "api-key",
+                                                "dungeon-test-123456");
+
+                                try (FileOutputStream output = new FileOutputStream(configFile)) {
+
+                                        properties.store(
+                                                        output,
+                                                        "Dungeon API Configuration");
+                                }
+
+                                LOGGER.info(
+                                                "Se ha creado la configuración de Dungeon API en {}",
+                                                configFile.getAbsolutePath());
+                        }
+
+                        try (FileInputStream input = new FileInputStream(configFile)) {
+
+                                properties.load(input);
+                        }
+
+                        API_KEY = properties.getProperty("api-key");
+
+                        if (API_KEY == null || API_KEY.isBlank()) {
+
+                                throw new IllegalStateException(
+                                                "La propiedad 'api-key' no está configurada.");
+                        }
+
+                        String portString = properties.getProperty("port");
+
+                        try {
+
+                                PORT = Integer.parseInt(portString);
+
+                        } catch (NumberFormatException e) {
+
+                                throw new IllegalStateException(
+                                                "El puerto configurado no es válido: "
+                                                                + portString,
+                                                e);
+                        }
+
+                        LOGGER.info(
+                                        "Configuración de Dungeon API cargada correctamente.");
+
+                        LOGGER.info(
+                                        "Configuración cargada: puerto={}, api-key configurada={}",
+                                        PORT,
+                                        API_KEY != null && !API_KEY.isBlank());
+
+                } catch (IOException e) {
+
+                        LOGGER.error(
+                                        "No se pudo cargar dungeonapi.properties.",
+                                        e);
+
+                        throw new RuntimeException(e);
+                }
+        }
+
+        // =========================================================
+        // SERVIDOR INICIADO
+        // =========================================================
+
+        @SubscribeEvent
+        public void onServerStarted(ServerStartedEvent event) {
+
+                server = event.getServer();
+
                 LOGGER.info(
-                        "Se ha creado la configuración de Dungeon API en {}",
-                        configFile.getAbsolutePath());
-            }
+                                "Servidor de Minecraft iniciado.");
 
-            try (FileInputStream input = new FileInputStream(configFile)) {
+                // -----------------------------------------------------
+                // Cargar configuración
+                // -----------------------------------------------------
 
-                properties.load(input);
-            }
+                loadConfiguration();
 
-            API_KEY = properties.getProperty("api-key");
+                // -----------------------------------------------------
+                // Schematic Manager
+                // -----------------------------------------------------
 
-            if (API_KEY == null || API_KEY.isBlank()) {
+                schematicManager = new SchematicManager(
+                                server.getServerDirectory()
+                                                .toPath()
+                                                .resolve("config")
+                                                .resolve("worldedit")
+                                                .resolve("schematics")
+                                                .toFile());
 
-                throw new IllegalStateException(
-                        "La propiedad 'api-key' no está configurada.");
-            }
+                // -----------------------------------------------------
+                // Dungeon Manager
+                // -----------------------------------------------------
 
-            String portString = properties.getProperty("port");
+                dungeonManager = new DungeonManager(
+                                server,
+                                schematicManager);
 
-            try {
+                try {
 
-                PORT = Integer.parseInt(portString);
+                        dungeonManager.createDefaultConfiguration();
 
-            } catch (NumberFormatException e) {
+                } catch (Exception e) {
 
-                throw new IllegalStateException(
-                        "El puerto configurado no es válido: "
-                                + portString,
-                        e);
-            }
+                        LOGGER.error(
+                                        "No se pudo crear la configuración de las dungeons.",
+                                        e);
+                }
 
-            LOGGER.info(
-                    "Configuración de Dungeon API cargada correctamente.");
+                // -----------------------------------------------------
+                // HTTP Server
+                // -----------------------------------------------------
 
-            LOGGER.info(
-                    "Configuración cargada: puerto={}, api-key configurada={}",
-                    PORT,
-                    API_KEY != null && !API_KEY.isBlank());
+                httpServer = new HttpServer(
+                                server,
+                                schematicManager);
 
-        } catch (IOException e) {
+                try {
 
-            LOGGER.error(
-                    "No se pudo cargar dungeonapi.properties.",
-                    e);
+                        LOGGER.info(
+                                        "Intentando iniciar Dungeon API en el puerto {}...",
+                                        PORT);
 
-            throw new RuntimeException(e);
-        }
-    }
+                        httpServer.start();
 
-    // =========================================================
-    // SERVIDOR INICIADO
-    // =========================================================
+                } catch (Exception e) {
 
-    @SubscribeEvent
-    public void onServerStarted(ServerStartedEvent event) {
-
-        server = event.getServer();
-
-        LOGGER.info(
-                "Servidor de Minecraft iniciado.");
-
-        // -----------------------------------------------------
-        // Cargar configuración
-        // -----------------------------------------------------
-
-        loadConfiguration();
-
-        // -----------------------------------------------------
-        // Schematic Manager
-        // -----------------------------------------------------
-
-        schematicManager = new SchematicManager(
-                server.getServerDirectory()
-                        .toPath()
-                        .resolve("config")
-                        .resolve("worldedit")
-                        .resolve("schematics")
-                        .toFile());
-
-        // -----------------------------------------------------
-        // Dungeon Manager
-        // -----------------------------------------------------
-
-        dungeonManager = new DungeonManager(
-                server,
-                schematicManager);
-
-        try {
-
-            dungeonManager.createDefaultConfiguration();
-
-        } catch (Exception e) {
-
-            LOGGER.error(
-                    "No se pudo crear la configuración de las dungeons.",
-                    e);
+                        LOGGER.error(
+                                        "No se pudo iniciar la Dungeon API en el puerto {}.",
+                                        PORT,
+                                        e);
+                }
         }
 
-        // -----------------------------------------------------
-        // HTTP Server
-        // -----------------------------------------------------
+        // =========================================================
+        // SERVIDOR DETENIÉNDOSE
+        // =========================================================
 
-        httpServer = new HttpServer(
-                server,
-                schematicManager);
+        @SubscribeEvent
+        public void onServerStopping(ServerStoppingEvent event) {
 
-        try {
+                if (httpServer != null) {
 
-            LOGGER.info(
-                    "Intentando iniciar Dungeon API en el puerto {}...",
-                    PORT);
+                        httpServer.stop();
 
-            httpServer.start();
+                        httpServer = null;
+                }
 
-        } catch (Exception e) {
+                server = null;
 
-            LOGGER.error(
-                    "No se pudo iniciar la Dungeon API en el puerto {}.",
-                    PORT,
-                    e);
-        }
-    }
-
-    // =========================================================
-    // SERVIDOR DETENIÉNDOSE
-    // =========================================================
-
-    @SubscribeEvent
-    public void onServerStopping(ServerStoppingEvent event) {
-
-        if (httpServer != null) {
-
-            httpServer.stop();
-
-            httpServer = null;
+                LOGGER.info(
+                                "Dungeon API detenida.");
         }
 
-        server = null;
+        // =========================================================
+        // REGISTRO DE COMANDOS
+        // =========================================================
 
-        LOGGER.info(
-                "Dungeon API detenida.");
-    }
+        @SubscribeEvent
+        public void onRegisterCommands(RegisterCommandsEvent event) {
 
-    // =========================================================
-    // REGISTRO DE COMANDOS
-    // =========================================================
+                event.getDispatcher().register(
 
-    @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
+                                Commands.literal("dungeon-api")
 
-        event.getDispatcher().register(
+                                                .requires(source -> source.hasPermission(2))
 
-                Commands.literal("dungeon-api")
+                                                // -------------------------------------------------
+                                                // /dungeon-api reset <dungeon>
+                                                // -------------------------------------------------
 
-                        .requires(source -> source.hasPermission(2))
+                                                .then(
+                                                                Commands.literal("reset")
 
-                        // -------------------------------------------------
-                        // /dungeon-api reset <dungeon>
-                        // -------------------------------------------------
+                                                                                .then(
+                                                                                                Commands.argument(
+                                                                                                                "dungeon",
+                                                                                                                StringArgumentType
+                                                                                                                                .word())
 
-                        .then(
-                                Commands.literal("reset")
+                                                                                                                .executes(context -> {
 
-                                        .then(
-                                                Commands.argument(
-                                                        "dungeon",
-                                                        StringArgumentType.word())
+                                                                                                                        String dungeonId = StringArgumentType
+                                                                                                                                        .getString(
+                                                                                                                                                        context,
+                                                                                                                                                        "dungeon");
 
-                                                        .executes(context -> {
+                                                                                                                        if (dungeonManager == null) {
 
-                                                            String dungeonId = StringArgumentType.getString(
-                                                                    context,
-                                                                    "dungeon");
+                                                                                                                                LOGGER.error(
+                                                                                                                                                "La Dungeon API todavía no está preparada.");
 
-                                                            if (dungeonManager == null) {
+                                                                                                                                return 0;
+                                                                                                                        }
 
-                                                                LOGGER.error(
-                                                                        "La Dungeon API todavía no está preparada.");
+                                                                                                                        boolean success = dungeonManager
+                                                                                                                                        .resetDungeon(
+                                                                                                                                                        dungeonId);
 
-                                                                return 0;
-                                                            }
+                                                                                                                        return success ? 1
+                                                                                                                                        : 0;
+                                                                                                                })))
 
-                                                            boolean success = dungeonManager.resetDungeon(
-                                                                    dungeonId);
+                                                // -------------------------------------------------
+                                                // /dungeon-api reset-all
+                                                // -------------------------------------------------
 
-                                                            return success ? 1 : 0;
-                                                        })))
+                                                .then(
+                                                                Commands.literal("reset-all")
 
-                        // -------------------------------------------------
-                        // /dungeon-api reset-all
-                        // -------------------------------------------------
+                                                                                .executes(context -> {
 
-                        .then(
-                                Commands.literal("reset-all")
+                                                                                        if (dungeonManager == null) {
 
-                                        .executes(context -> {
+                                                                                                LOGGER.error(
+                                                                                                                "La Dungeon API todavía no está preparada.");
 
-                                            if (dungeonManager == null) {
+                                                                                                return 0;
+                                                                                        }
 
-                                                LOGGER.error(
-                                                        "La Dungeon API todavía no está preparada.");
+                                                                                        DungeonResetResult result = dungeonManager
+                                                                                                        .resetAllDungeons();
 
-                                                return 0;
-                                            }
+                                                                                        String message = "Dungeons regeneradas: "
+                                                                                                        + result.getSuccessful()
+                                                                                                        + "/"
+                                                                                                        + result.getTotal();
 
-                                            DungeonResetResult result = dungeonManager.resetAllDungeons();
+                                                                                        server.getPlayerList()
+                                                                                                        .broadcastSystemMessage(
+                                                                                                                        Component.literal(
+                                                                                                                                        message),
+                                                                                                                        false);
 
-                                            String message = "Dungeons regeneradas: "
-                                                    + result.getSuccessful()
-                                                    + "/"
-                                                    + result.getTotal();
+                                                                                        if (result.getFailed() > 0) {
 
-                                            server.getPlayerList()
-                                                    .broadcastSystemMessage(
-                                                            Component.literal(message),
-                                                            false);
+                                                                                                String errorMessage = "Dungeons con error: "
+                                                                                                                + result.getFailed();
 
-                                            if (result.getFailed() > 0) {
+                                                                                                server.getPlayerList()
+                                                                                                                .broadcastSystemMessage(
+                                                                                                                                Component.literal(
+                                                                                                                                                errorMessage),
+                                                                                                                                false);
+                                                                                        }
 
-                                                String errorMessage = "Dungeons con error: "
-                                                        + result.getFailed();
+                                                                                        return result.getSuccessful();
+                                                                                })));
+        }
 
-                                                server.getPlayerList()
-                                                        .broadcastSystemMessage(
-                                                                Component.literal(errorMessage),
-                                                                false);
-                                            }
+        // =========================================================
+        // GET SERVER
+        // =========================================================
 
-                                            return result.getSuccessful();
-                                        })));
-    }
+        public static MinecraftServer getServer() {
 
-    // =========================================================
-    // GET SERVER
-    // =========================================================
-
-    public static MinecraftServer getServer() {
-
-        return server;
-    }
+                return server;
+        }
 }
