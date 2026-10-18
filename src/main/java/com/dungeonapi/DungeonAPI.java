@@ -323,7 +323,60 @@ public class DungeonAPI {
                                                                                         }
 
                                                                                         return result.getSuccessful();
-                                                                                })));
+                                                                                }))
+
+                                                // -------------------------------------------------
+                                                // /dungeon-api list
+                                                // -------------------------------------------------
+
+                                                .then(
+                                                                Commands.literal("list")
+                                                                                .executes(context -> {
+
+                                                                                        if (dungeonManager == null) {
+
+                                                                                                context.getSource()
+                                                                                                                .sendFailure(
+                                                                                                                                Component.literal(
+                                                                                                                                                "La Dungeon API todavía no está preparada."));
+
+                                                                                                return 0;
+                                                                                        }
+
+                                                                                        var dungeons = dungeonManager
+                                                                                                        .loadDungeons();
+
+                                                                                        if (dungeons.isEmpty()) {
+
+                                                                                                context.getSource()
+                                                                                                                .sendSuccess(
+                                                                                                                                () -> Component.literal(
+                                                                                                                                                "No hay dungeons disponibles."),
+                                                                                                                                false);
+
+                                                                                                return 1;
+                                                                                        }
+
+                                                                                        context.getSource().sendSuccess(
+                                                                                                        () -> Component.literal(
+                                                                                                                        "Dungeons disponibles ("
+                                                                                                                                        + dungeons.size()
+                                                                                                                                        + "):"),
+                                                                                                        false);
+
+                                                                                        for (DungeonConfig dungeon : dungeons) {
+
+                                                                                                context.getSource()
+                                                                                                                .sendSuccess(
+                                                                                                                                () -> Component.literal(
+                                                                                                                                                "- " + dungeon.getId()),
+                                                                                                                                false);
+                                                                                        }
+
+                                                                                        return dungeons.size();
+                                                                                }))
+
+                );
         }
 
         // =========================================================
