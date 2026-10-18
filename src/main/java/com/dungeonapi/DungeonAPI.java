@@ -22,6 +22,17 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Properties;
 
+import net.minecraft.commands.arguments.coordinates.Vec3Argument;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.Vec3;
+
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.event.ServerChatEvent;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+
 @Mod(DungeonAPI.MOD_ID)
 public class DungeonAPI {
 
@@ -36,6 +47,8 @@ public class DungeonAPI {
         private static HttpServer httpServer;
         private static SchematicManager schematicManager;
         private static DungeonManager dungeonManager;
+
+        private final Map<UUID, PendingDungeonSave> pendingDungeonSaves = new HashMap<>();
 
         public DungeonAPI() {
 
@@ -221,6 +234,7 @@ public class DungeonAPI {
 
                         httpServer.stop();
 
+                        pendingDungeonSaves.clear();
                         httpServer = null;
                 }
 
@@ -376,7 +390,241 @@ public class DungeonAPI {
                                                                                         return dungeons.size();
                                                                                 }))
 
+                                                // -------------------------------------------------
+                                                // /dungeon-api save <nombreDungeon> <schematic> <pos>
+                                                // -------------------------------------------------
+
+                                                .then(
+                                                                Commands.literal("save")
+                                                                                .then(
+                                                                                                Commands.argument(
+                                                                                                                "nombreDungeon",
+                                                                                                                StringArgumentType
+                                                                                                                                .word())
+                                                                                                                .then(
+                                                                                                                                Commands.argument(
+                                                                                                                                                "schematic",
+                                                                                                                                                StringArgumentType
+                                                                                                                                                                .word())
+                                                                                                                                                .then(
+                                                                                                                                                                Commands.argument(
+                                                                                                                                                                                "pos",
+                                                                                                                                                                                Vec3Argument.vec3())
+                                                                                                                                                                                .executes(context -> {
+
+                                                                                                                                                                                        if (dungeonManager == null) {
+
+                                                                                                                                                                                                context.getSource()
+                                                                                                                                                                                                                .sendFailure(
+                                                                                                                                                                                                                                Component.literal(
+                                                                                                                                                                                                                                                "La Dungeon API todavía no está preparada."));
+
+                                                                                                                                                                                                return 0;
+                                                                                                                                                                                        }
+
+                                                                                                                                                                                        ServerPlayer player;
+
+                                                                                                                                                                                        try {
+                                                                                                                                                                                                player = context.getSource()
+                                                                                                                                                                                                                .getPlayerOrException();
+                                                                                                                                                                                        } catch (Exception e) {
+                                                                                                                                                                                                context.getSource()
+                                                                                                                                                                                                                .sendFailure(
+                                                                                                                                                                                                                                Component.literal(
+                                                                                                                                                                                                                                                "Este comando debe ejecutarse desde un jugador."));
+                                                                                                                                                                                                return 0;
+                                                                                                                                                                                        }
+
+                                                                                                                                                                                        String dungeonId = StringArgumentType
+                                                                                                                                                                                                        .getString(
+                                                                                                                                                                                                                        context,
+                                                                                                                                                                                                                        "nombreDungeon");
+
+                                                                                                                                                                                        String schematic = StringArgumentType
+                                                                                                                                                                                                        .getString(
+                                                                                                                                                                                                                        context,
+                                                                                                                                                                                                                        "schematic");
+
+                                                                                                                                                                                        Vec3 position = Vec3Argument
+                                                                                                                                                                                                        .getVec3(
+                                                                                                                                                                                                                        context,
+                                                                                                                                                                                                                        "pos");
+
+                                                                                                                                                                                        BlockPos blockPos = BlockPos
+                                                                                                                                                                                                        .containing(position);
+
+                                                                                                                                                                                        String world = context
+                                                                                                                                                                                                        .getSource()
+                                                                                                                                                                                                        .getLevel()
+                                                                                                                                                                                                        .dimension()
+                                                                                                                                                                                                        .location()
+                                                                                                                                                                                                        .toString();
+
+                                                                                                                                                                                        if (!dungeonId.matches(
+                                                                                                                                                                                                        "[a-zA-Z0-9_-]+")) {
+
+                                                                                                                                                                                                context.getSource()
+                                                                                                                                                                                                                .sendFailure(
+                                                                                                                                                                                                                                Component.literal(
+                                                                                                                                                                                                                                                "Nombre de dungeon no válido. Usa letras, números, guiones o guiones bajos."));
+                                                                                                                                                                                                return 0;
+                                                                                                                                                                                        }
+
+                                                                                                                                                                                        // Si
+                                                                                                                                                                                        // ya
+                                                                                                                                                                                        // existe,
+                                                                                                                                                                                        // solicitar
+                                                                                                                                                                                        // confirmación.
+                                                                                                                                                                                        if (dungeonManager
+                                                                                                                                                                                                        .dungeonExists(dungeonId)) {
+
+                                                                                                                                                                                                pendingDungeonSaves
+                                                                                                                                                                                                                .put(
+                                                                                                                                                                                                                                player.getUUID(),
+                                                                                                                                                                                                                                new PendingDungeonSave(
+                                                                                                                                                                                                                                                dungeonId,
+                                                                                                                                                                                                                                                schematic,
+                                                                                                                                                                                                                                                world,
+                                                                                                                                                                                                                                                blockPos.getX(),
+                                                                                                                                                                                                                                                blockPos.getY(),
+                                                                                                                                                                                                                                                blockPos.getZ()));
+
+                                                                                                                                                                                                context.getSource()
+                                                                                                                                                                                                                .sendSuccess(
+                                                                                                                                                                                                                                () -> Component.literal(
+                                                                                                                                                                                                                                                "La dungeon '" + dungeonId
+                                                                                                                                                                                                                                                                + "' ya existe. Escribe 'y' en el chat para sobrescribirla. Cualquier otra respuesta cancelará el guardado."),
+                                                                                                                                                                                                                                false);
+
+                                                                                                                                                                                                return 1;
+                                                                                                                                                                                        }
+
+                                                                                                                                                                                        // Crear
+                                                                                                                                                                                        // una
+                                                                                                                                                                                        // dungeon
+                                                                                                                                                                                        // nueva.
+                                                                                                                                                                                        boolean success = dungeonManager
+                                                                                                                                                                                                        .createDungeon(
+                                                                                                                                                                                                                        dungeonId,
+                                                                                                                                                                                                                        schematic,
+                                                                                                                                                                                                                        world,
+                                                                                                                                                                                                                        blockPos.getX(),
+                                                                                                                                                                                                                        blockPos.getY(),
+                                                                                                                                                                                                                        blockPos.getZ(),
+                                                                                                                                                                                                                        false);
+
+                                                                                                                                                                                        if (!success) {
+
+                                                                                                                                                                                                context.getSource()
+                                                                                                                                                                                                                .sendFailure(
+                                                                                                                                                                                                                                Component.literal(
+                                                                                                                                                                                                                                                "No se pudo crear la dungeon. Comprueba que el schematic existe y que la configuración es válida."));
+                                                                                                                                                                                                return 0;
+                                                                                                                                                                                        }
+
+                                                                                                                                                                                        context.getSource()
+                                                                                                                                                                                                        .sendSuccess(
+                                                                                                                                                                                                                        () -> Component.literal(
+                                                                                                                                                                                                                                        "Dungeon '" + dungeonId
+                                                                                                                                                                                                                                                        + "' creada correctamente."),
+                                                                                                                                                                                                                        false);
+
+                                                                                                                                                                                        return 1;
+                                                                                                                                                                                })))))
+
                 );
+        }
+
+        private static class PendingDungeonSave {
+
+                private final String dungeonId;
+                private final String schematic;
+                private final String world;
+                private final int x;
+                private final int y;
+                private final int z;
+
+                private PendingDungeonSave(
+                                String dungeonId,
+                                String schematic,
+                                String world,
+                                int x,
+                                int y,
+                                int z) {
+
+                        this.dungeonId = dungeonId;
+                        this.schematic = schematic;
+                        this.world = world;
+                        this.x = x;
+                        this.y = y;
+                        this.z = z;
+                }
+        }
+
+        @SubscribeEvent
+        public void onServerChat(ServerChatEvent event) {
+
+                ServerPlayer player = event.getPlayer();
+
+                PendingDungeonSave pending = pendingDungeonSaves.remove(player.getUUID());
+
+                // Este jugador no tiene ninguna confirmación pendiente.
+                if (pending == null) {
+                        return;
+                }
+
+                // La respuesta se procesa como confirmación,
+                // no como un mensaje público del chat.
+                event.setCanceled(true);
+
+                String answer = event.getMessage()
+                                .getString()
+                                .trim();
+
+                if (!answer.equalsIgnoreCase("y")) {
+
+                        player.sendSystemMessage(
+                                        Component.literal(
+                                                        "Guardado cancelado. La dungeon '"
+                                                                        + pending.dungeonId
+                                                                        + "' no se ha sobrescrito."));
+
+                        return;
+                }
+
+                if (dungeonManager == null) {
+
+                        player.sendSystemMessage(
+                                        Component.literal(
+                                                        "No se pudo guardar: DungeonAPI no está preparada."));
+
+                        return;
+                }
+
+                boolean success = dungeonManager.createDungeon(
+                                pending.dungeonId,
+                                pending.schematic,
+                                pending.world,
+                                pending.x,
+                                pending.y,
+                                pending.z,
+                                true);
+
+                if (success) {
+
+                        player.sendSystemMessage(
+                                        Component.literal(
+                                                        "Dungeon '"
+                                                                        + pending.dungeonId
+                                                                        + "' sobrescrita correctamente."));
+
+                } else {
+
+                        player.sendSystemMessage(
+                                        Component.literal(
+                                                        "No se pudo sobrescribir la dungeon. "
+                                                                        + "Comprueba el schematic y los registros del servidor."));
+                }
         }
 
         // =========================================================

@@ -300,4 +300,119 @@ public class DungeonManager {
     public Path getDungeonsDirectory() {
         return dungeonsDirectory;
     }
+
+    public boolean createDungeon(
+            String dungeonId,
+            String schematic,
+            String world,
+            int x,
+            int y,
+            int z,
+            boolean overwrite) {
+
+        // Validar el identificador de la dungeon.
+        if (dungeonId == null ||
+                !dungeonId.matches("[a-zA-Z0-9_-]+")) {
+
+            DungeonAPI.LOGGER.warn(
+                    "Nombre de dungeon no válido: '{}'.",
+                    dungeonId);
+
+            return false;
+        }
+
+        // Validar el nombre del schematic.
+        if (schematic == null ||
+                !schematic.matches("[a-zA-Z0-9_-]+")) {
+
+            DungeonAPI.LOGGER.warn(
+                    "Nombre de schematic no válido: '{}'.",
+                    schematic);
+
+            return false;
+        }
+
+        // Comprobar que existe el schematic.
+        Path schematicsDirectory = server.getServerDirectory()
+                .toPath()
+                .resolve("config")
+                .resolve("worldedit")
+                .resolve("schematics");
+
+        Path schematicFile = schematicsDirectory
+                .resolve(schematic + ".schem");
+
+        if (!Files.isRegularFile(schematicFile)) {
+
+            DungeonAPI.LOGGER.warn(
+                    "No se encontró el schematic '{}.schem'.",
+                    schematic);
+
+            return false;
+        }
+
+        Path dungeonDirectory = dungeonsDirectory.resolve(dungeonId);
+
+        boolean exists = Files.isDirectory(dungeonDirectory);
+
+        // No sobrescribir sin confirmación.
+        if (exists && !overwrite) {
+
+            return false;
+        }
+
+        try {
+
+            Files.createDirectories(dungeonDirectory);
+
+            Properties properties = new Properties();
+
+            properties.setProperty("world", world);
+            properties.setProperty("x", String.valueOf(x));
+            properties.setProperty("y", String.valueOf(y));
+            properties.setProperty("z", String.valueOf(z));
+            properties.setProperty("schematic", schematic);
+
+            Path propertiesFile = dungeonDirectory.resolve("dungeon.properties");
+
+            try (var output = Files.newOutputStream(propertiesFile)) {
+
+                properties.store(
+                        output,
+                        "Dungeon configuration");
+            }
+
+            DungeonAPI.LOGGER.info(
+                    "Dungeon '{}' guardada. Schematic: '{}', mundo: {}, posición: {}, {}, {}.",
+                    dungeonId,
+                    schematic,
+                    world,
+                    x,
+                    y,
+                    z);
+
+            return true;
+
+        } catch (IOException e) {
+
+            DungeonAPI.LOGGER.error(
+                    "No se pudo guardar la dungeon '{}'.",
+                    dungeonId,
+                    e);
+
+            return false;
+        }
+    }
+
+    public boolean dungeonExists(String dungeonId) {
+
+        if (dungeonId == null ||
+                !dungeonId.matches("[a-zA-Z0-9_-]+")) {
+            return false;
+        }
+
+        return Files.isDirectory(
+                dungeonsDirectory.resolve(dungeonId));
+    }
+
 }
