@@ -415,4 +415,54 @@ public class DungeonManager {
                 dungeonsDirectory.resolve(dungeonId));
     }
 
+    public boolean deleteDungeon(String dungeonId) {
+
+        // Validar el identificador.
+        if (dungeonId == null ||
+                !dungeonId.matches("[a-zA-Z0-9_-]+")) {
+
+            DungeonAPI.LOGGER.warn(
+                    "Nombre de dungeon no válido: '{}'.",
+                    dungeonId);
+
+            return false;
+        }
+
+        Path dungeonDirectory = dungeonsDirectory.resolve(dungeonId);
+
+        if (!Files.isDirectory(dungeonDirectory)) {
+
+            DungeonAPI.LOGGER.warn(
+                    "No se encontró la dungeon '{}'.",
+                    dungeonId);
+
+            return false;
+        }
+
+        try (var paths = Files.walk(dungeonDirectory)) {
+
+            for (Path path : paths
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .toList()) {
+
+                Files.delete(path);
+            }
+
+            DungeonAPI.LOGGER.info(
+                    "Dungeon '{}' eliminada correctamente.",
+                    dungeonId);
+
+            return true;
+
+        } catch (IOException e) {
+
+            DungeonAPI.LOGGER.error(
+                    "No se pudo eliminar la dungeon '{}'.",
+                    dungeonId,
+                    e);
+
+            return false;
+        }
+    }
+
 }

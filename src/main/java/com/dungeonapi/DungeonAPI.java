@@ -532,6 +532,70 @@ public class DungeonAPI {
                                                                                                                                                                                         return 1;
                                                                                                                                                                                 })))))
 
+                                                // -------------------------------------------------
+                                                // /dungeon-api delete <nombreDungeon>
+                                                // -------------------------------------------------
+
+                                                .then(
+                                                                Commands.literal("delete")
+                                                                                .then(
+                                                                                                Commands.argument(
+                                                                                                                "nombreDungeon",
+                                                                                                                StringArgumentType
+                                                                                                                                .word())
+                                                                                                                .executes(context -> {
+
+                                                                                                                        if (dungeonManager == null) {
+
+                                                                                                                                context.getSource()
+                                                                                                                                                .sendFailure(
+                                                                                                                                                                Component.literal(
+                                                                                                                                                                                "La Dungeon API todavía no está preparada."));
+                                                                                                                                return 0;
+                                                                                                                        }
+
+                                                                                                                        String dungeonId = StringArgumentType
+                                                                                                                                        .getString(
+                                                                                                                                                        context,
+                                                                                                                                                        "nombreDungeon");
+
+                                                                                                                        if (!dungeonManager
+                                                                                                                                        .dungeonExists(dungeonId)) {
+
+                                                                                                                                context.getSource()
+                                                                                                                                                .sendFailure(
+                                                                                                                                                                Component.literal(
+                                                                                                                                                                                "No existe la dungeon '"
+                                                                                                                                                                                                + dungeonId
+                                                                                                                                                                                                + "'."));
+                                                                                                                                return 0;
+                                                                                                                        }
+
+                                                                                                                        boolean success = dungeonManager
+                                                                                                                                        .deleteDungeon(
+                                                                                                                                                        dungeonId);
+
+                                                                                                                        if (!success) {
+
+                                                                                                                                context.getSource()
+                                                                                                                                                .sendFailure(
+                                                                                                                                                                Component.literal(
+                                                                                                                                                                                "No se pudo eliminar la dungeon '"
+                                                                                                                                                                                                + dungeonId
+                                                                                                                                                                                                + "'."));
+                                                                                                                                return 0;
+                                                                                                                        }
+
+                                                                                                                        context.getSource()
+                                                                                                                                        .sendSuccess(
+                                                                                                                                                        () -> Component.literal(
+                                                                                                                                                                        "Dungeon '" + dungeonId
+                                                                                                                                                                                        + "' eliminada correctamente."),
+                                                                                                                                                        false);
+
+                                                                                                                        return 1;
+                                                                                                                })))
+
                 );
         }
 
