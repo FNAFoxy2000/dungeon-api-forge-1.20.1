@@ -58,6 +58,8 @@ public class DungeonAPI {
       LOGGER.info("Dungeon API: CONSTRUCTOR EJECUTADO");
       LOGGER.info("========================================");
 
+      NetworkHandler.register();
+
       MinecraftForge.EVENT_BUS.register(this);
    }
 

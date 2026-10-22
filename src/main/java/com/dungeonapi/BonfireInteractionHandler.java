@@ -1,11 +1,9 @@
 package com.dungeonapi;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -44,7 +42,9 @@ public class BonfireInteractionHandler {
     }
 
     // Lógica de activación de la hoguera.
-    private static void onBonfireActivated(ServerPlayer player, BlockPos campfirePos) {
+    private static void onBonfireActivated(
+            ServerPlayer player,
+            BlockPos campfirePos) {
 
         // 1. Establecer el punto de reaparición.
         BlockPos position = player.blockPosition();
@@ -56,7 +56,11 @@ public class BonfireInteractionHandler {
                 true,
                 true);
 
-        // 2. Consultar la dungeon asignada a esta hoguera.
+        // 2. Solicitar al cliente que abra el menú de Ascend.
+        // Si Ascend no está instalado, el cliente no hará nada.
+        NetworkHandler.openAscendScreen(player);
+
+        // 3. Consultar la dungeon asignada a esta hoguera.
         BonfireManager bonfireManager = DungeonAPI.getBonfireManager();
 
         if (bonfireManager == null) {
@@ -70,7 +74,7 @@ public class BonfireInteractionHandler {
                 player.serverLevel().dimension(),
                 campfirePos);
 
-        // 3. Si no tiene dungeon, no se reinicia ninguna.
+        // 4. Si no tiene dungeon, no se reinicia ninguna.
         if (dungeonId == null) {
             player.sendSystemMessage(
                     Component.literal(
@@ -78,7 +82,7 @@ public class BonfireInteractionHandler {
             return;
         }
 
-        // 4. Reiniciar exclusivamente la dungeon asignada.
+        // 5. Reiniciar exclusivamente la dungeon asignada.
         DungeonManager dungeonManager = DungeonAPI.getDungeonManager();
 
         if (dungeonManager == null) {
@@ -101,20 +105,6 @@ public class BonfireInteractionHandler {
                             "[DungeonAPI] Hoguera activada, pero no se pudo regenerar '" +
                                     dungeonId + "'. Revisa el registro del servidor."));
         }
-    }
-
-    // Determina la posición de la hoguera con la que el jugador está interactuando.
-    private static BlockPos positionOfCampfire(ServerPlayer player) {
-        var hit = player.pick(6.0D, 0.0F, false);
-
-        if (hit instanceof net.minecraft.world.phys.BlockHitResult blockHit
-                && hit.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
-                && player.level().getBlockState(blockHit.getBlockPos())
-                        .is(Blocks.CAMPFIRE)) {
-            return blockHit.getBlockPos();
-        }
-
-        return player.blockPosition();
     }
 
 }
