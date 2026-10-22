@@ -36,667 +36,810 @@ import java.util.UUID;
 @Mod(DungeonAPI.MOD_ID)
 public class DungeonAPI {
 
-        public static final String MOD_ID = "dungeonapi";
+   public static final String MOD_ID = "dungeonapi";
 
-        public static String API_KEY;
-        public static int PORT;
+   public static String API_KEY;
+   public static int PORT;
 
-        public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+   public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-        private static MinecraftServer server;
-        private static HttpServer httpServer;
-        private static SchematicManager schematicManager;
-        private static DungeonManager dungeonManager;
+   private static MinecraftServer server;
+   private static HttpServer httpServer;
+   private static SchematicManager schematicManager;
+   private static DungeonManager dungeonManager;
 
-        private final Map<UUID, PendingDungeonSave> pendingDungeonSaves = new HashMap<>();
+   private final Map<UUID, PendingDungeonSave> pendingDungeonSaves = new HashMap<>();
 
-        public DungeonAPI() {
+   private static BonfireManager bonfireManager;
 
-                LOGGER.info("========================================");
-                LOGGER.info("Dungeon API: CONSTRUCTOR EJECUTADO");
-                LOGGER.info("========================================");
+   public DungeonAPI() {
 
-                MinecraftForge.EVENT_BUS.register(this);
-        }
+      LOGGER.info("========================================");
+      LOGGER.info("Dungeon API: CONSTRUCTOR EJECUTADO");
+      LOGGER.info("========================================");
 
-        // =========================================================
-        // CONFIGURACIÓN
-        // =========================================================
+      MinecraftForge.EVENT_BUS.register(this);
+   }
 
-        private static void loadConfiguration() {
+   // =========================================================
+   // CONFIGURACIÓN
+   // =========================================================
 
-                if (server == null) {
-                        throw new IllegalStateException(
-                                        "El servidor de Minecraft todavía no está disponible.");
-                }
+   private static void loadConfiguration() {
 
-                File configFile = server.getServerDirectory()
-                                .toPath()
-                                .resolve("config")
-                                .resolve("dungeonapi.properties")
-                                .toFile();
+      if (server == null) {
+         throw new IllegalStateException(
+               "El servidor de Minecraft todavía no está disponible.");
+      }
 
-                Properties properties = new Properties();
+      File configFile = server.getServerDirectory()
+            .toPath()
+            .resolve("config")
+            .resolve("dungeonapi.properties")
+            .toFile();
 
-                try {
+      Properties properties = new Properties();
 
-                        if (!configFile.exists()) {
+      try {
 
-                                configFile.getParentFile().mkdirs();
+         if (!configFile.exists()) {
 
-                                properties.setProperty(
-                                                "port",
-                                                "8080");
+            configFile.getParentFile().mkdirs();
 
-                                properties.setProperty(
-                                                "api-key",
-                                                "dungeon-test-123456");
+            properties.setProperty(
+                  "port",
+                  "8080");
 
-                                try (FileOutputStream output = new FileOutputStream(configFile)) {
+            properties.setProperty(
+                  "api-key",
+                  "dungeon-test-123456");
 
-                                        properties.store(
-                                                        output,
-                                                        "Dungeon API Configuration");
-                                }
+            try (FileOutputStream output = new FileOutputStream(configFile)) {
 
-                                LOGGER.info(
-                                                "Se ha creado la configuración de Dungeon API en {}",
-                                                configFile.getAbsolutePath());
-                        }
+               properties.store(
+                     output,
+                     "Dungeon API Configuration");
+            }
 
-                        try (FileInputStream input = new FileInputStream(configFile)) {
+            LOGGER.info(
+                  "Se ha creado la configuración de Dungeon API en {}",
+                  configFile.getAbsolutePath());
+         }
 
-                                properties.load(input);
-                        }
+         try (FileInputStream input = new FileInputStream(configFile)) {
 
-                        API_KEY = properties.getProperty("api-key");
+            properties.load(input);
+         }
 
-                        if (API_KEY == null || API_KEY.isBlank()) {
+         API_KEY = properties.getProperty("api-key");
 
-                                throw new IllegalStateException(
-                                                "La propiedad 'api-key' no está configurada.");
-                        }
+         if (API_KEY == null || API_KEY.isBlank()) {
 
-                        String portString = properties.getProperty("port");
+            throw new IllegalStateException(
+                  "La propiedad 'api-key' no está configurada.");
+         }
 
-                        try {
+         String portString = properties.getProperty("port");
 
-                                PORT = Integer.parseInt(portString);
+         try {
 
-                        } catch (NumberFormatException e) {
+            PORT = Integer.parseInt(portString);
 
-                                throw new IllegalStateException(
-                                                "El puerto configurado no es válido: "
-                                                                + portString,
-                                                e);
-                        }
+         } catch (NumberFormatException e) {
 
-                        LOGGER.info(
-                                        "Configuración de Dungeon API cargada correctamente.");
+            throw new IllegalStateException(
+                  "El puerto configurado no es válido: "
+                        + portString,
+                  e);
+         }
 
-                        LOGGER.info(
-                                        "Configuración cargada: puerto={}, api-key configurada={}",
-                                        PORT,
-                                        API_KEY != null && !API_KEY.isBlank());
+         LOGGER.info(
+               "Configuración de Dungeon API cargada correctamente.");
 
-                } catch (IOException e) {
+         LOGGER.info(
+               "Configuración cargada: puerto={}, api-key configurada={}",
+               PORT,
+               API_KEY != null && !API_KEY.isBlank());
 
-                        LOGGER.error(
-                                        "No se pudo cargar dungeonapi.properties.",
-                                        e);
+      } catch (IOException e) {
 
-                        throw new RuntimeException(e);
-                }
-        }
+         LOGGER.error(
+               "No se pudo cargar dungeonapi.properties.",
+               e);
 
-        // =========================================================
-        // SERVIDOR INICIADO
-        // =========================================================
+         throw new RuntimeException(e);
+      }
+   }
 
-        @SubscribeEvent
-        public void onServerStarted(ServerStartedEvent event) {
+   // =========================================================
+   // SERVIDOR INICIADO
+   // =========================================================
 
-                server = event.getServer();
+   @SubscribeEvent
+   public void onServerStarted(ServerStartedEvent event) {
 
-                LOGGER.info(
-                                "Servidor de Minecraft iniciado.");
+      server = event.getServer();
 
-                // -----------------------------------------------------
-                // Cargar configuración
-                // -----------------------------------------------------
+      LOGGER.info(
+            "Servidor de Minecraft iniciado.");
 
-                loadConfiguration();
+      // -----------------------------------------------------
+      // Cargar configuración
+      // -----------------------------------------------------
 
-                // -----------------------------------------------------
-                // Schematic Manager
-                // -----------------------------------------------------
+      loadConfiguration();
 
-                schematicManager = new SchematicManager(
-                                server.getServerDirectory()
-                                                .toPath()
-                                                .resolve("config")
-                                                .resolve("worldedit")
-                                                .resolve("schematics")
-                                                .toFile());
+      // -----------------------------------------------------
+      // Schematic Manager
+      // -----------------------------------------------------
 
-                // -----------------------------------------------------
-                // Dungeon Manager
-                // -----------------------------------------------------
+      schematicManager = new SchematicManager(
+            server.getServerDirectory()
+                  .toPath()
+                  .resolve("config")
+                  .resolve("worldedit")
+                  .resolve("schematics")
+                  .toFile());
 
-                dungeonManager = new DungeonManager(
-                                server,
-                                schematicManager);
+      // -----------------------------------------------------
+      // Dungeon Manager
+      // -----------------------------------------------------
 
-                try {
+      dungeonManager = new DungeonManager(
+            server,
+            schematicManager);
 
-                        dungeonManager.createDefaultConfiguration();
+      try {
 
-                } catch (Exception e) {
+         dungeonManager.createDefaultConfiguration();
 
-                        LOGGER.error(
-                                        "No se pudo crear la configuración de las dungeons.",
-                                        e);
-                }
+      } catch (Exception e) {
 
-                // -----------------------------------------------------
-                // HTTP Server
-                // -----------------------------------------------------
+         LOGGER.error(
+               "No se pudo crear la configuración de las dungeons.",
+               e);
+      }
 
-                httpServer = new HttpServer(
-                                server,
-                                schematicManager);
+      // -----------------------------------------------------
+      // HTTP Server
+      // -----------------------------------------------------
 
-                try {
+      httpServer = new HttpServer(
+            server,
+            schematicManager);
 
-                        LOGGER.info(
-                                        "Intentando iniciar Dungeon API en el puerto {}...",
-                                        PORT);
+      try {
 
-                        httpServer.start();
+         LOGGER.info(
+               "Intentando iniciar Dungeon API en el puerto {}...",
+               PORT);
 
-                } catch (Exception e) {
+         httpServer.start();
 
-                        LOGGER.error(
-                                        "No se pudo iniciar la Dungeon API en el puerto {}.",
-                                        PORT,
-                                        e);
-                }
-        }
+      } catch (Exception e) {
 
-        // =========================================================
-        // SERVIDOR DETENIÉNDOSE
-        // =========================================================
+         LOGGER.error(
+               "No se pudo iniciar la Dungeon API en el puerto {}.",
+               PORT,
+               e);
+      }
 
-        @SubscribeEvent
-        public void onServerStopping(ServerStoppingEvent event) {
+      try {
+         bonfireManager = new BonfireManager(
+               server.getServerDirectory()
+                     .toPath()
+                     .resolve("config")
+                     .resolve("dungeon-api"));
 
-                if (httpServer != null) {
+         LOGGER.info("Asignaciones de hogueras cargadas correctamente.");
 
-                        httpServer.stop();
+      } catch (IOException e) {
+         LOGGER.error("No se pudieron cargar las asignaciones de hogueras.", e);
+      }
+   }
+
+   // =========================================================
+   // SERVIDOR DETENIÉNDOSE
+   // =========================================================
+
+   @SubscribeEvent
+   public void onServerStopping(ServerStoppingEvent event) {
 
-                        pendingDungeonSaves.clear();
-                        httpServer = null;
-                }
-
-                server = null;
-
-                LOGGER.info(
-                                "Dungeon API detenida.");
-        }
-
-        // =========================================================
-        // REGISTRO DE COMANDOS
-        // =========================================================
-
-        @SubscribeEvent
-        public void onRegisterCommands(RegisterCommandsEvent event) {
-
-                event.getDispatcher().register(
-
-                                Commands.literal("dungeon-api")
-
-                                                .requires(source -> source.hasPermission(2))
-
-                                                // -------------------------------------------------
-                                                // /dungeon-api reset <dungeon>
-                                                // -------------------------------------------------
-
-                                                .then(
-                                                                Commands.literal("reset")
-
-                                                                                .then(
-                                                                                                Commands.argument(
-                                                                                                                "dungeon",
-                                                                                                                StringArgumentType
-                                                                                                                                .word())
-
-                                                                                                                .executes(context -> {
-
-                                                                                                                        String dungeonId = StringArgumentType
-                                                                                                                                        .getString(
-                                                                                                                                                        context,
-                                                                                                                                                        "dungeon");
-
-                                                                                                                        if (dungeonManager == null) {
-
-                                                                                                                                LOGGER.error(
-                                                                                                                                                "La Dungeon API todavía no está preparada.");
-
-                                                                                                                                return 0;
-                                                                                                                        }
-
-                                                                                                                        boolean success = dungeonManager
-                                                                                                                                        .resetDungeon(
-                                                                                                                                                        dungeonId);
-
-                                                                                                                        return success ? 1
-                                                                                                                                        : 0;
-                                                                                                                })))
-
-                                                // -------------------------------------------------
-                                                // /dungeon-api reset-all
-                                                // -------------------------------------------------
-
-                                                .then(
-                                                                Commands.literal("reset-all")
-
-                                                                                .executes(context -> {
-
-                                                                                        if (dungeonManager == null) {
-
-                                                                                                LOGGER.error(
-                                                                                                                "La Dungeon API todavía no está preparada.");
-
-                                                                                                return 0;
-                                                                                        }
-
-                                                                                        DungeonResetResult result = dungeonManager
-                                                                                                        .resetAllDungeons();
-
-                                                                                        String message = "Dungeons regeneradas: "
-                                                                                                        + result.getSuccessful()
-                                                                                                        + "/"
-                                                                                                        + result.getTotal();
-
-                                                                                        server.getPlayerList()
-                                                                                                        .broadcastSystemMessage(
-                                                                                                                        Component.literal(
-                                                                                                                                        message),
-                                                                                                                        false);
-
-                                                                                        if (result.getFailed() > 0) {
-
-                                                                                                String errorMessage = "Dungeons con error: "
-                                                                                                                + result.getFailed();
-
-                                                                                                server.getPlayerList()
-                                                                                                                .broadcastSystemMessage(
-                                                                                                                                Component.literal(
-                                                                                                                                                errorMessage),
-                                                                                                                                false);
-                                                                                        }
-
-                                                                                        return result.getSuccessful();
-                                                                                }))
-
-                                                // -------------------------------------------------
-                                                // /dungeon-api list
-                                                // -------------------------------------------------
-
-                                                .then(
-                                                                Commands.literal("list")
-                                                                                .executes(context -> {
-
-                                                                                        if (dungeonManager == null) {
-
-                                                                                                context.getSource()
-                                                                                                                .sendFailure(
-                                                                                                                                Component.literal(
-                                                                                                                                                "La Dungeon API todavía no está preparada."));
-
-                                                                                                return 0;
-                                                                                        }
-
-                                                                                        var dungeons = dungeonManager
-                                                                                                        .loadDungeons();
-
-                                                                                        if (dungeons.isEmpty()) {
-
-                                                                                                context.getSource()
-                                                                                                                .sendSuccess(
-                                                                                                                                () -> Component.literal(
-                                                                                                                                                "No hay dungeons disponibles."),
-                                                                                                                                false);
-
-                                                                                                return 1;
-                                                                                        }
-
-                                                                                        context.getSource().sendSuccess(
-                                                                                                        () -> Component.literal(
-                                                                                                                        "Dungeons disponibles ("
-                                                                                                                                        + dungeons.size()
-                                                                                                                                        + "):"),
-                                                                                                        false);
-
-                                                                                        for (DungeonConfig dungeon : dungeons) {
-
-                                                                                                context.getSource()
-                                                                                                                .sendSuccess(
-                                                                                                                                () -> Component.literal(
-                                                                                                                                                "- " + dungeon.getId()),
-                                                                                                                                false);
-                                                                                        }
-
-                                                                                        return dungeons.size();
-                                                                                }))
-
-                                                // -------------------------------------------------
-                                                // /dungeon-api save <nombreDungeon> <schematic> <pos>
-                                                // -------------------------------------------------
-
-                                                .then(
-                                                                Commands.literal("save")
-                                                                                .then(
-                                                                                                Commands.argument(
-                                                                                                                "nombreDungeon",
-                                                                                                                StringArgumentType
-                                                                                                                                .word())
-                                                                                                                .then(
-                                                                                                                                Commands.argument(
-                                                                                                                                                "schematic",
-                                                                                                                                                StringArgumentType
-                                                                                                                                                                .word())
-                                                                                                                                                .then(
-                                                                                                                                                                Commands.argument(
-                                                                                                                                                                                "pos",
-                                                                                                                                                                                Vec3Argument.vec3())
-                                                                                                                                                                                .executes(context -> {
-
-                                                                                                                                                                                        if (dungeonManager == null) {
-
-                                                                                                                                                                                                context.getSource()
-                                                                                                                                                                                                                .sendFailure(
-                                                                                                                                                                                                                                Component.literal(
-                                                                                                                                                                                                                                                "La Dungeon API todavía no está preparada."));
-
-                                                                                                                                                                                                return 0;
-                                                                                                                                                                                        }
-
-                                                                                                                                                                                        ServerPlayer player;
-
-                                                                                                                                                                                        try {
-                                                                                                                                                                                                player = context.getSource()
-                                                                                                                                                                                                                .getPlayerOrException();
-                                                                                                                                                                                        } catch (Exception e) {
-                                                                                                                                                                                                context.getSource()
-                                                                                                                                                                                                                .sendFailure(
-                                                                                                                                                                                                                                Component.literal(
-                                                                                                                                                                                                                                                "Este comando debe ejecutarse desde un jugador."));
-                                                                                                                                                                                                return 0;
-                                                                                                                                                                                        }
-
-                                                                                                                                                                                        String dungeonId = StringArgumentType
-                                                                                                                                                                                                        .getString(
-                                                                                                                                                                                                                        context,
-                                                                                                                                                                                                                        "nombreDungeon");
-
-                                                                                                                                                                                        String schematic = StringArgumentType
-                                                                                                                                                                                                        .getString(
-                                                                                                                                                                                                                        context,
-                                                                                                                                                                                                                        "schematic");
-
-                                                                                                                                                                                        Vec3 position = Vec3Argument
-                                                                                                                                                                                                        .getVec3(
-                                                                                                                                                                                                                        context,
-                                                                                                                                                                                                                        "pos");
-
-                                                                                                                                                                                        BlockPos blockPos = BlockPos
-                                                                                                                                                                                                        .containing(position);
-
-                                                                                                                                                                                        String world = context
-                                                                                                                                                                                                        .getSource()
-                                                                                                                                                                                                        .getLevel()
-                                                                                                                                                                                                        .dimension()
-                                                                                                                                                                                                        .location()
-                                                                                                                                                                                                        .toString();
-
-                                                                                                                                                                                        if (!dungeonId.matches(
-                                                                                                                                                                                                        "[a-zA-Z0-9_-]+")) {
-
-                                                                                                                                                                                                context.getSource()
-                                                                                                                                                                                                                .sendFailure(
-                                                                                                                                                                                                                                Component.literal(
-                                                                                                                                                                                                                                                "Nombre de dungeon no válido. Usa letras, números, guiones o guiones bajos."));
-                                                                                                                                                                                                return 0;
-                                                                                                                                                                                        }
-
-                                                                                                                                                                                        // Si
-                                                                                                                                                                                        // ya
-                                                                                                                                                                                        // existe,
-                                                                                                                                                                                        // solicitar
-                                                                                                                                                                                        // confirmación.
-                                                                                                                                                                                        if (dungeonManager
-                                                                                                                                                                                                        .dungeonExists(dungeonId)) {
-
-                                                                                                                                                                                                pendingDungeonSaves
-                                                                                                                                                                                                                .put(
-                                                                                                                                                                                                                                player.getUUID(),
-                                                                                                                                                                                                                                new PendingDungeonSave(
-                                                                                                                                                                                                                                                dungeonId,
-                                                                                                                                                                                                                                                schematic,
-                                                                                                                                                                                                                                                world,
-                                                                                                                                                                                                                                                blockPos.getX(),
-                                                                                                                                                                                                                                                blockPos.getY(),
-                                                                                                                                                                                                                                                blockPos.getZ()));
-
-                                                                                                                                                                                                context.getSource()
-                                                                                                                                                                                                                .sendSuccess(
-                                                                                                                                                                                                                                () -> Component.literal(
-                                                                                                                                                                                                                                                "La dungeon '" + dungeonId
-                                                                                                                                                                                                                                                                + "' ya existe. Escribe 'y' en el chat para sobrescribirla. Cualquier otra respuesta cancelará el guardado."),
-                                                                                                                                                                                                                                false);
-
-                                                                                                                                                                                                return 1;
-                                                                                                                                                                                        }
-
-                                                                                                                                                                                        // Crear
-                                                                                                                                                                                        // una
-                                                                                                                                                                                        // dungeon
-                                                                                                                                                                                        // nueva.
-                                                                                                                                                                                        boolean success = dungeonManager
-                                                                                                                                                                                                        .createDungeon(
-                                                                                                                                                                                                                        dungeonId,
-                                                                                                                                                                                                                        schematic,
-                                                                                                                                                                                                                        world,
-                                                                                                                                                                                                                        blockPos.getX(),
-                                                                                                                                                                                                                        blockPos.getY(),
-                                                                                                                                                                                                                        blockPos.getZ(),
-                                                                                                                                                                                                                        false);
-
-                                                                                                                                                                                        if (!success) {
-
-                                                                                                                                                                                                context.getSource()
-                                                                                                                                                                                                                .sendFailure(
-                                                                                                                                                                                                                                Component.literal(
-                                                                                                                                                                                                                                                "No se pudo crear la dungeon. Comprueba que el schematic existe y que la configuración es válida."));
-                                                                                                                                                                                                return 0;
-                                                                                                                                                                                        }
-
-                                                                                                                                                                                        context.getSource()
-                                                                                                                                                                                                        .sendSuccess(
-                                                                                                                                                                                                                        () -> Component.literal(
-                                                                                                                                                                                                                                        "Dungeon '" + dungeonId
-                                                                                                                                                                                                                                                        + "' creada correctamente."),
-                                                                                                                                                                                                                        false);
-
-                                                                                                                                                                                        return 1;
-                                                                                                                                                                                })))))
-
-                                                // -------------------------------------------------
-                                                // /dungeon-api delete <nombreDungeon>
-                                                // -------------------------------------------------
-
-                                                .then(
-                                                                Commands.literal("delete")
-                                                                                .then(
-                                                                                                Commands.argument(
-                                                                                                                "nombreDungeon",
-                                                                                                                StringArgumentType
-                                                                                                                                .word())
-                                                                                                                .executes(context -> {
-
-                                                                                                                        if (dungeonManager == null) {
-
-                                                                                                                                context.getSource()
-                                                                                                                                                .sendFailure(
-                                                                                                                                                                Component.literal(
-                                                                                                                                                                                "La Dungeon API todavía no está preparada."));
-                                                                                                                                return 0;
-                                                                                                                        }
-
-                                                                                                                        String dungeonId = StringArgumentType
-                                                                                                                                        .getString(
-                                                                                                                                                        context,
-                                                                                                                                                        "nombreDungeon");
-
-                                                                                                                        if (!dungeonManager
-                                                                                                                                        .dungeonExists(dungeonId)) {
-
-                                                                                                                                context.getSource()
-                                                                                                                                                .sendFailure(
-                                                                                                                                                                Component.literal(
-                                                                                                                                                                                "No existe la dungeon '"
-                                                                                                                                                                                                + dungeonId
-                                                                                                                                                                                                + "'."));
-                                                                                                                                return 0;
-                                                                                                                        }
-
-                                                                                                                        boolean success = dungeonManager
-                                                                                                                                        .deleteDungeon(
-                                                                                                                                                        dungeonId);
-
-                                                                                                                        if (!success) {
-
-                                                                                                                                context.getSource()
-                                                                                                                                                .sendFailure(
-                                                                                                                                                                Component.literal(
-                                                                                                                                                                                "No se pudo eliminar la dungeon '"
-                                                                                                                                                                                                + dungeonId
-                                                                                                                                                                                                + "'."));
-                                                                                                                                return 0;
-                                                                                                                        }
-
-                                                                                                                        context.getSource()
-                                                                                                                                        .sendSuccess(
-                                                                                                                                                        () -> Component.literal(
-                                                                                                                                                                        "Dungeon '" + dungeonId
-                                                                                                                                                                                        + "' eliminada correctamente."),
-                                                                                                                                                        false);
-
-                                                                                                                        return 1;
-                                                                                                                })))
-
-                );
-        }
-
-        private static class PendingDungeonSave {
-
-                private final String dungeonId;
-                private final String schematic;
-                private final String world;
-                private final int x;
-                private final int y;
-                private final int z;
-
-                private PendingDungeonSave(
-                                String dungeonId,
-                                String schematic,
-                                String world,
-                                int x,
-                                int y,
-                                int z) {
-
-                        this.dungeonId = dungeonId;
-                        this.schematic = schematic;
-                        this.world = world;
-                        this.x = x;
-                        this.y = y;
-                        this.z = z;
-                }
-        }
-
-        @SubscribeEvent
-        public void onServerChat(ServerChatEvent event) {
-
-                ServerPlayer player = event.getPlayer();
-
-                PendingDungeonSave pending = pendingDungeonSaves.remove(player.getUUID());
-
-                // Este jugador no tiene ninguna confirmación pendiente.
-                if (pending == null) {
-                        return;
-                }
-
-                // La respuesta se procesa como confirmación,
-                // no como un mensaje público del chat.
-                event.setCanceled(true);
-
-                String answer = event.getMessage()
-                                .getString()
-                                .trim();
-
-                if (!answer.equalsIgnoreCase("y")) {
-
-                        player.sendSystemMessage(
-                                        Component.literal(
-                                                        "Guardado cancelado. La dungeon '"
-                                                                        + pending.dungeonId
-                                                                        + "' no se ha sobrescrito."));
-
-                        return;
-                }
-
-                if (dungeonManager == null) {
-
-                        player.sendSystemMessage(
-                                        Component.literal(
-                                                        "No se pudo guardar: DungeonAPI no está preparada."));
-
-                        return;
-                }
-
-                boolean success = dungeonManager.createDungeon(
-                                pending.dungeonId,
-                                pending.schematic,
-                                pending.world,
-                                pending.x,
-                                pending.y,
-                                pending.z,
-                                true);
-
-                if (success) {
-
-                        player.sendSystemMessage(
-                                        Component.literal(
-                                                        "Dungeon '"
-                                                                        + pending.dungeonId
-                                                                        + "' sobrescrita correctamente."));
-
-                } else {
-
-                        player.sendSystemMessage(
-                                        Component.literal(
-                                                        "No se pudo sobrescribir la dungeon. "
-                                                                        + "Comprueba el schematic y los registros del servidor."));
-                }
-        }
-
-        // =========================================================
-        // GET SERVER
-        // =========================================================
-
-        public static MinecraftServer getServer() {
-
-                return server;
-        }
+      if (httpServer != null) {
+
+         httpServer.stop();
+
+         pendingDungeonSaves.clear();
+         httpServer = null;
+      }
+
+      server = null;
+
+      LOGGER.info(
+            "Dungeon API detenida.");
+   }
+
+   // =========================================================
+   // REGISTRO DE COMANDOS
+   // =========================================================
+
+   @SubscribeEvent
+   public void onRegisterCommands(RegisterCommandsEvent event) {
+
+      // =========================================================
+      // COMANDO PRINCIPAL
+      // =========================================================
+
+      event.getDispatcher().register(
+            Commands.literal("dungeon-api")
+                  .requires(source -> source.hasPermission(2))
+
+                  // =================================================
+                  // /dungeon-api reset <dungeon>
+                  // =================================================
+                  .then(Commands.literal("reset")
+                        .then(Commands.argument(
+                              "dungeon",
+                              StringArgumentType.word())
+                              .executes(context -> {
+
+                                 if (dungeonManager == null) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "La Dungeon API todavía no está preparada."));
+                                    return 0;
+                                 }
+
+                                 String dungeonId = StringArgumentType.getString(
+                                       context, "dungeon");
+
+                                 return dungeonManager.resetDungeon(dungeonId) ? 1 : 0;
+                              })))
+
+                  // =================================================
+                  // /dungeon-api reset-all
+                  // =================================================
+                  .then(Commands.literal("reset-all")
+                        .executes(context -> {
+
+                           if (dungeonManager == null) {
+                              context.getSource().sendFailure(
+                                    Component.literal(
+                                          "La Dungeon API todavía no está preparada."));
+                              return 0;
+                           }
+
+                           DungeonResetResult result = dungeonManager.resetAllDungeons();
+
+                           context.getSource().sendSuccess(
+                                 () -> Component.literal(
+                                       "Dungeons regeneradas: "
+                                             + result.getSuccessful()
+                                             + "/" + result.getTotal()),
+                                 false);
+
+                           if (result.getFailed() > 0) {
+                              context.getSource().sendFailure(
+                                    Component.literal(
+                                          "Dungeons con error: "
+                                                + result.getFailed()));
+                           }
+
+                           return result.getSuccessful();
+                        }))
+
+                  // =================================================
+                  // /dungeon-api list
+                  // =================================================
+                  .then(Commands.literal("list")
+                        .executes(context -> {
+
+                           if (dungeonManager == null) {
+                              context.getSource().sendFailure(
+                                    Component.literal(
+                                          "La Dungeon API todavía no está preparada."));
+                              return 0;
+                           }
+
+                           var dungeons = dungeonManager.loadDungeons();
+
+                           if (dungeons.isEmpty()) {
+                              context.getSource().sendSuccess(
+                                    () -> Component.literal(
+                                          "No hay dungeons disponibles."),
+                                    false);
+                              return 1;
+                           }
+
+                           context.getSource().sendSuccess(
+                                 () -> Component.literal(
+                                       "Dungeons disponibles (" + dungeons.size() + "):"),
+                                 false);
+
+                           for (DungeonConfig dungeon : dungeons) {
+                              context.getSource().sendSuccess(
+                                    () -> Component.literal("- " + dungeon.getId()),
+                                    false);
+                           }
+
+                           return dungeons.size();
+                        }))
+
+                  // =================================================
+                  // /dungeon-api save <nombreDungeon> <schematic> <pos>
+                  // =================================================
+                  .then(Commands.literal("save")
+                        .then(Commands.argument(
+                              "nombreDungeon",
+                              StringArgumentType.word())
+                              .then(Commands.argument(
+                                    "schematic",
+                                    StringArgumentType.word())
+                                    .then(Commands.argument(
+                                          "pos",
+                                          Vec3Argument.vec3())
+                                          .executes(context -> {
+
+                                             if (dungeonManager == null) {
+                                                context.getSource().sendFailure(
+                                                      Component.literal(
+                                                            "La Dungeon API todavía no está preparada."));
+                                                return 0;
+                                             }
+
+                                             ServerPlayer player;
+
+                                             try {
+                                                player = context.getSource()
+                                                      .getPlayerOrException();
+                                             } catch (Exception e) {
+                                                context.getSource().sendFailure(
+                                                      Component.literal(
+                                                            "Este comando debe ejecutarse desde un jugador."));
+                                                return 0;
+                                             }
+
+                                             String dungeonId = StringArgumentType.getString(
+                                                   context, "nombreDungeon");
+
+                                             String schematic = StringArgumentType.getString(
+                                                   context, "schematic");
+
+                                             Vec3 position = Vec3Argument.getVec3(
+                                                   context, "pos");
+
+                                             BlockPos blockPos = BlockPos.containing(position);
+
+                                             String world = context.getSource()
+                                                   .getLevel()
+                                                   .dimension()
+                                                   .location()
+                                                   .toString();
+
+                                             if (!dungeonId.matches(
+                                                   "[a-zA-Z0-9_-]+")) {
+                                                context.getSource().sendFailure(
+                                                      Component.literal(
+                                                            "Nombre de dungeon no válido. Usa letras, números, guiones o guiones bajos."));
+                                                return 0;
+                                             }
+
+                                             if (dungeonManager.dungeonExists(dungeonId)) {
+
+                                                pendingDungeonSaves.put(
+                                                      player.getUUID(),
+                                                      new PendingDungeonSave(
+                                                            dungeonId,
+                                                            schematic,
+                                                            world,
+                                                            blockPos.getX(),
+                                                            blockPos.getY(),
+                                                            blockPos.getZ()));
+
+                                                context.getSource().sendSuccess(
+                                                      () -> Component.literal(
+                                                            "La dungeon '" + dungeonId
+                                                                  + "' ya existe. Escribe 'y' en el chat para sobrescribirla. Cualquier otra respuesta cancelará el guardado."),
+                                                      false);
+
+                                                return 1;
+                                             }
+
+                                             boolean success = dungeonManager.createDungeon(
+                                                   dungeonId,
+                                                   schematic,
+                                                   world,
+                                                   blockPos.getX(),
+                                                   blockPos.getY(),
+                                                   blockPos.getZ(),
+                                                   false);
+
+                                             if (!success) {
+                                                context.getSource().sendFailure(
+                                                      Component.literal(
+                                                            "No se pudo crear la dungeon. Comprueba que el schematic existe y que la configuración es válida."));
+                                                return 0;
+                                             }
+
+                                             context.getSource().sendSuccess(
+                                                   () -> Component.literal(
+                                                         "Dungeon '" + dungeonId
+                                                               + "' creada correctamente."),
+                                                   false);
+
+                                             return 1;
+                                          })))))
+
+                  // =================================================
+                  // /dungeon-api delete <nombreDungeon>
+                  // =================================================
+                  .then(Commands.literal("delete")
+                        .then(Commands.argument(
+                              "nombreDungeon",
+                              StringArgumentType.word())
+                              .executes(context -> {
+
+                                 if (dungeonManager == null) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "La Dungeon API todavía no está preparada."));
+                                    return 0;
+                                 }
+
+                                 String dungeonId = StringArgumentType.getString(
+                                       context, "nombreDungeon");
+
+                                 if (!dungeonManager.dungeonExists(dungeonId)) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "No existe la dungeon '" + dungeonId + "'."));
+                                    return 0;
+                                 }
+
+                                 boolean success = dungeonManager.deleteDungeon(dungeonId);
+
+                                 if (!success) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "No se pudo eliminar la dungeon '"
+                                                      + dungeonId + "'."));
+                                    return 0;
+                                 }
+
+                                 context.getSource().sendSuccess(
+                                       () -> Component.literal(
+                                             "Dungeon '" + dungeonId
+                                                   + "' eliminada correctamente."),
+                                       false);
+
+                                 return 1;
+                              })))
+
+                  // =================================================
+                  // HOGUERAS
+                  // Todos estos comandos están bajo /dungeon-api bonfire
+                  // =================================================
+                  .then(Commands.literal("bonfire")
+
+                        // -------------------------------------------------
+                        // /dungeon-api bonfire set <dungeon>
+                        // -------------------------------------------------
+                        .then(Commands.literal("set")
+                              .then(Commands.argument(
+                                    "dungeon",
+                                    StringArgumentType.word())
+                                    .executes(context -> {
+
+                                       ServerPlayer player;
+
+                                       try {
+                                          player = context.getSource()
+                                                .getPlayerOrException();
+                                       } catch (Exception e) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "Este comando debe ejecutarse desde un jugador."));
+                                          return 0;
+                                       }
+
+                                       if (dungeonManager == null
+                                             || bonfireManager == null) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "DungeonAPI todavía no está preparada."));
+                                          return 0;
+                                       }
+
+                                       String dungeonId = StringArgumentType.getString(
+                                             context, "dungeon");
+
+                                       if (!dungeonManager.dungeonExists(dungeonId)) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "No existe la dungeon '"
+                                                            + dungeonId + "'."));
+                                          return 0;
+                                       }
+
+                                       var hit = player.pick(6.0D, 0.0F, false);
+
+                                       if (!(hit instanceof net.minecraft.world.phys.BlockHitResult blockHit)
+                                             || hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "Debes mirar directamente a una hoguera."));
+                                          return 0;
+                                       }
+
+                                       BlockPos pos = blockHit.getBlockPos();
+
+                                       if (!player.level().getBlockState(pos)
+                                             .is(net.minecraft.world.level.block.Blocks.CAMPFIRE)) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "El bloque seleccionado no es una hoguera normal."));
+                                          return 0;
+                                       }
+
+                                       boolean success = bonfireManager.assign(
+                                             player.level().dimension(),
+                                             pos,
+                                             dungeonId);
+
+                                       if (!success) {
+                                          context.getSource().sendFailure(
+                                                Component.literal(
+                                                      "No se pudo guardar la asignación."));
+                                          return 0;
+                                       }
+
+                                       context.getSource().sendSuccess(
+                                             () -> Component.literal(
+                                                   "Hoguera asignada a la dungeon '"
+                                                         + dungeonId + "' en "
+                                                         + pos.getX() + ", "
+                                                         + pos.getY() + ", "
+                                                         + pos.getZ() + "."),
+                                             false);
+
+                                       return 1;
+                                    })))
+
+                        // -------------------------------------------------
+                        // /dungeon-api bonfire remove
+                        // -------------------------------------------------
+                        .then(Commands.literal("remove")
+                              .executes(context -> {
+
+                                 ServerPlayer player;
+
+                                 try {
+                                    player = context.getSource()
+                                          .getPlayerOrException();
+                                 } catch (Exception e) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "Este comando debe ejecutarse desde un jugador."));
+                                    return 0;
+                                 }
+
+                                 if (bonfireManager == null) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "El gestor de hogueras no está preparado."));
+                                    return 0;
+                                 }
+
+                                 var hit = player.pick(6.0D, 0.0F, false);
+
+                                 if (!(hit instanceof net.minecraft.world.phys.BlockHitResult blockHit)
+                                       || hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "Debes mirar directamente a una hoguera."));
+                                    return 0;
+                                 }
+
+                                 BlockPos pos = blockHit.getBlockPos();
+
+                                 if (!player.level().getBlockState(pos)
+                                       .is(net.minecraft.world.level.block.Blocks.CAMPFIRE)) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "El bloque seleccionado no es una hoguera normal."));
+                                    return 0;
+                                 }
+
+                                 boolean removed = bonfireManager.remove(
+                                       player.level().dimension(),
+                                       pos);
+
+                                 if (!removed) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "Esta hoguera no tiene ninguna dungeon asignada."));
+                                    return 0;
+                                 }
+
+                                 context.getSource().sendSuccess(
+                                       () -> Component.literal(
+                                             "Asignación de la hoguera eliminada."),
+                                       false);
+
+                                 return 1;
+                              }))
+
+                        // -------------------------------------------------
+                        // /dungeon-api bonfire info
+                        // -------------------------------------------------
+                        .then(Commands.literal("info")
+                              .executes(context -> {
+
+                                 ServerPlayer player;
+
+                                 try {
+                                    player = context.getSource()
+                                          .getPlayerOrException();
+                                 } catch (Exception e) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "Este comando debe ejecutarse desde un jugador."));
+                                    return 0;
+                                 }
+
+                                 if (bonfireManager == null) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "El gestor de hogueras no está preparado."));
+                                    return 0;
+                                 }
+
+                                 var hit = player.pick(6.0D, 0.0F, false);
+
+                                 if (!(hit instanceof net.minecraft.world.phys.BlockHitResult blockHit)
+                                       || hit.getType() != net.minecraft.world.phys.HitResult.Type.BLOCK) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "Debes mirar directamente a una hoguera."));
+                                    return 0;
+                                 }
+
+                                 BlockPos pos = blockHit.getBlockPos();
+
+                                 if (!player.level().getBlockState(pos)
+                                       .is(net.minecraft.world.level.block.Blocks.CAMPFIRE)) {
+                                    context.getSource().sendFailure(
+                                          Component.literal(
+                                                "El bloque seleccionado no es una hoguera normal."));
+                                    return 0;
+                                 }
+
+                                 String dungeonId = bonfireManager.getDungeon(
+                                       player.level().dimension(),
+                                       pos);
+
+                                 if (dungeonId == null) {
+                                    context.getSource().sendSuccess(
+                                          () -> Component.literal(
+                                                "Esta hoguera no tiene ninguna dungeon asignada."),
+                                          false);
+                                 } else {
+                                    context.getSource().sendSuccess(
+                                          () -> Component.literal(
+                                                "Dungeon asignada: " + dungeonId),
+                                          false);
+                                 }
+
+                                 return 1;
+                              }))));
+   }
+
+   private static class PendingDungeonSave {
+
+      private final String dungeonId;
+      private final String schematic;
+      private final String world;
+      private final int x;
+      private final int y;
+      private final int z;
+
+      private PendingDungeonSave(
+            String dungeonId,
+            String schematic,
+            String world,
+            int x,
+            int y,
+            int z) {
+
+         this.dungeonId = dungeonId;
+         this.schematic = schematic;
+         this.world = world;
+         this.x = x;
+         this.y = y;
+         this.z = z;
+      }
+   }
+
+   @SubscribeEvent
+   public void onServerChat(ServerChatEvent event) {
+
+      ServerPlayer player = event.getPlayer();
+
+      PendingDungeonSave pending = pendingDungeonSaves.remove(player.getUUID());
+
+      // Este jugador no tiene ninguna confirmación pendiente.
+      if (pending == null) {
+         return;
+      }
+
+      // La respuesta se procesa como confirmación,
+      // no como un mensaje público del chat.
+      event.setCanceled(true);
+
+      String answer = event.getMessage()
+            .getString()
+            .trim();
+
+      if (!answer.equalsIgnoreCase("y")) {
+
+         player.sendSystemMessage(
+               Component.literal(
+                     "Guardado cancelado. La dungeon '"
+                           + pending.dungeonId
+                           + "' no se ha sobrescrito."));
+
+         return;
+      }
+
+      if (dungeonManager == null) {
+
+         player.sendSystemMessage(
+               Component.literal(
+                     "No se pudo guardar: DungeonAPI no está preparada."));
+
+         return;
+      }
+
+      boolean success = dungeonManager.createDungeon(
+            pending.dungeonId,
+            pending.schematic,
+            pending.world,
+            pending.x,
+            pending.y,
+            pending.z,
+            true);
+
+      if (success) {
+
+         player.sendSystemMessage(
+               Component.literal(
+                     "Dungeon '"
+                           + pending.dungeonId
+                           + "' sobrescrita correctamente."));
+
+      } else {
+
+         player.sendSystemMessage(
+               Component.literal(
+                     "No se pudo sobrescribir la dungeon. "
+                           + "Comprueba el schematic y los registros del servidor."));
+      }
+   }
+
+   // =========================================================
+   // GET SERVER
+   // =========================================================
+
+   public static MinecraftServer getServer() {
+
+      return server;
+   }
+
+   public static BonfireManager getBonfireManager() {
+      return bonfireManager;
+   }
+
+   public static DungeonManager getDungeonManager() {
+      return dungeonManager;
+   }
 }
